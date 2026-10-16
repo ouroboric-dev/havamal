@@ -3,10 +3,13 @@ package havamal
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -266,4 +269,55 @@ func trial(ctx context.Context, t EvalTask, skill Loaded, with bool, agent EvalA
 		return false, err
 	}
 	return t.grade(dir, out), nil
+}
+
+// CheckEvals checks that every own skill ships with an eval and a passing, current result: the
+// result names this skill's content hash, passed, and shows the gain the eval asked for (spec §5.1).
+// It returns one line per problem. It reads the files, so a hand-edited result is no cheaper than a
+// real one: the lock pins the result file, and a person reviews the diff.
+func CheckEvals(fsys fs.FS) ([]string, error) {
+	raw, err := fs.ReadFile(fsys, LockFile)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := ParseLock(raw)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
+	var problems []string
+	for _, e := range lock.Skills {
+		if !e.Own {
+			continue
+		}
+		say := func(f string, a ...any) { problems = append(problems, "skill "+e.Name+": "+fmt.Sprintf(f, a...)) }
+		raw, err := fs.ReadFile(fsys, path.Join(SkillsDir, e.Name, EvalFile))
+		if err != nil {
+			say("our own skills ship with an eval, and %s is missing", EvalFile)
+			continue
+		}
+		ev, err := ParseEval(raw)
+		if err != nil {
+			say("%v", err)
+			continue
+		}
+		raw, err = fs.ReadFile(fsys, path.Join(SkillsDir, e.Name, ResultFile))
+		if err != nil {
+			say("no %s: run the eval and commit its result", ResultFile)
+			continue
+		}
+		var r Result
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		switch {
+		case dec.Decode(&r) != nil || r.Schema != ResultSchema || r.Skill != e.Name:
+			say("%s is not a result for this skill", ResultFile)
+		case r.SkillSHA256 != ContentHash(e):
+			say("%s is for an older version of the skill; run the eval again", ResultFile)
+		case r.Gain < ev.MinGain || !r.Passed || r.MinGain != ev.MinGain || r.Runs != ev.Runs:
+			say("the eval does not show the skill helps: gain %.2f, the eval asks for %.2f", r.Gain, ev.MinGain)
+		case r.Control.Total != r.Treatment.Total || r.Control.Total != ev.Runs*len(ev.Tasks):
+			say("%s doesn't count every trial of the eval", ResultFile)
+		}
+	}
+	return problems, nil
 }

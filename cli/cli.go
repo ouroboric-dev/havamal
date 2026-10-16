@@ -30,6 +30,8 @@ func Run(args []string, out, errOut io.Writer) int {
 		return check(args[1:], out, errOut)
 	case "vendor":
 		return vendor(args[1:], out, errOut)
+	case "lock":
+		return lock(args[1:], out, errOut)
 	}
 	fmt.Fprintf(errOut, "havamal: unknown command %q\n", args[0])
 	return ExitRefused
@@ -51,6 +53,9 @@ func check(args []string, out, errOut io.Writer) int {
 // report prints the drift of the library in fsys, and returns ExitFailed when there is any.
 func report(fsys fs.FS, out, errOut io.Writer) int {
 	drift, err := havamal.Verify(fsys)
+	if err == nil && len(drift) == 0 { // the evals are checked only on a library that has not drifted
+		drift, err = havamal.CheckEvals(fsys)
+	}
 	if err != nil {
 		fmt.Fprintf(errOut, "havamal: %v\n", err)
 		return ExitRefused
@@ -86,5 +91,23 @@ func vendor(args []string, out, errOut io.Writer) int {
 		return ExitFailed
 	}
 	fmt.Fprintf(out, "vendored %s at %.12s; review the diff, then open a pull request\n", o.Name, o.Commit)
+	return ExitDone
+}
+
+// lock records one of our own skills in skills.lock, after a person wrote or changed it.
+func lock(args []string, out, errOut io.Writer) int {
+	fs := flag.NewFlagSet("lock", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	dir := fs.String("dir", ".", "the library: holds skills/ and skills.lock")
+	licence := fs.String("licence", "", "the skill's SPDX licence id")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
+		fmt.Fprintln(errOut, "usage: havamal lock [-dir d] -licence <spdx> <skill>")
+		return ExitRefused
+	}
+	if err := havamal.Relock(*dir, fs.Arg(0), *licence); err != nil {
+		fmt.Fprintf(errOut, "havamal: %v\n", err)
+		return ExitFailed
+	}
+	fmt.Fprintf(out, "locked %s; review the diff, run its eval, then open a pull request\n", fs.Arg(0))
 	return ExitDone
 }

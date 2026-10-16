@@ -100,3 +100,68 @@ func TestParseEvalRefusesAnEvalThatCannotTell(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckEvalsNeedsACurrentPassingResult(t *testing.T) {
+	skill := ownSkill(t)
+	build := func(result string) fstest.MapFS {
+		files := []File{{Path: "SKILL.md", SHA256: skill.Entry.Files[0].SHA256}, {Path: "eval.yaml", SHA256: skill.Entry.Files[1].SHA256}}
+		fsys := fstest.MapFS{
+			"skills/.gitkeep":         {},
+			"skills/signer/SKILL.md":  {Data: []byte("---\nname: signer\ndescription: Sign reports.\n---\nAlways sign off.\n")},
+			"skills/signer/eval.yaml": {Data: []byte(evalYAML)},
+		}
+		if result != "" {
+			fsys["skills/signer/eval-result.json"] = &fstest.MapFile{Data: []byte(result)}
+			files = append(files, File{Path: ResultFile, SHA256: Sum([]byte(result))})
+		}
+		b, _ := (&Lock{Skills: []Entry{{Name: "signer", Own: true, Licence: "AGPL-3.0-only", Files: files}}}).Marshal()
+		fsys["skills.lock"] = &fstest.MapFile{Data: b}
+		return fsys
+	}
+	good := `{"schema":"ygg.skill-eval-result/v1","skill":"signer","skill_sha256":"` + ContentHash(skill.Entry) + `","model":"m","date":"d","runs":3,"min_gain":0.5,"control":{"passed":0,"total":3},"treatment":{"passed":3,"total":3},"gain":1,"passed":true}`
+	if p, err := CheckEvals(build(good)); err != nil || len(p) != 0 {
+		t.Errorf("a passing result: %q, %v", p, err)
+	}
+	for name, c := range map[string]struct{ result, want string }{
+		"no result":       {"", "no eval-result.json"},
+		"a stale result":  {strings.Replace(good, ContentHash(skill.Entry), strings.Repeat("0", 64), 1), "older version"},
+		"too little gain": {strings.Replace(strings.Replace(good, `"gain":1`, `"gain":0.1`, 1), `"passed":true`, `"passed":false`, 1), "does not show the skill helps"},
+		"a result claiming a pass with a low gain": {strings.Replace(good, `"gain":1`, `"gain":0.1`, 1), "does not show the skill helps"},
+	} {
+		p, err := CheckEvals(build(c.result))
+		if err != nil || !strings.Contains(strings.Join(p, "\n"), c.want) {
+			t.Errorf("%s: %q, %v; want a line with %q", name, p, err, c.want)
+		}
+	}
+}
+
+func TestRelockRecordsAnOwnSkillAndRefusesAVendoredOne(t *testing.T) {
+	lib := emptyLibrary(t)
+	skillDir := filepath.Join(lib, "skills", "signer")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: signer\ndescription: Sign reports.\n---\nAlways sign off.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relock(lib, "signer", ""); err == nil {
+		t.Error("a new skill without a licence was locked")
+	}
+	if err := Relock(lib, "signer", "AGPL-3.0-only"); err != nil {
+		t.Fatal(err)
+	}
+	if drift, _ := Verify(os.DirFS(lib)); len(drift) != 0 {
+		t.Errorf("drift after relock: %q", drift)
+	}
+	problems, _ := CheckEvals(os.DirFS(lib))
+	if !strings.Contains(strings.Join(problems, "\n"), "ship with an eval") {
+		t.Errorf("an own skill without an eval passed the check: %q", problems)
+	}
+	src, commit := upstreamRepo(t, nil)
+	if err := Vendor(context.Background(), options(lib, src, commit)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relock(lib, "plain-language", ""); err == nil {
+		t.Error("Relock changed a vendored skill")
+	}
+}

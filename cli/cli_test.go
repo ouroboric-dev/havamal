@@ -29,7 +29,10 @@ func TestCheckFailsOnDriftAndPassesWithout(t *testing.T) {
 	write(t, dir, "skills/ours/SKILL.md", skill)
 	write(t, dir, "skills/.gitkeep", "")
 	sum := sha(skill)
-	write(t, dir, "skills.lock", `{"schema":"ygg.skills-lock/v1","skills":[{"name":"ours","own":true,"licence":"AGPL-3.0-only","files":[{"path":"SKILL.md","sha256":"`+sum+`"}]}]}`)
+	write(t, dir, "skills/ours/LICENSE", "MIT\n")
+	write(t, dir, "skills.lock", `{"schema":"ygg.skills-lock/v1","skills":[{"name":"ours","licence":"MIT",`+
+		`"upstream":{"repo":"https://github.com/example/w","path":"ours","commit":"`+strings.Repeat("a", 40)+`"},`+
+		`"files":[{"path":"LICENSE","sha256":"`+sha("MIT\n")+`"},{"path":"SKILL.md","sha256":"`+sum+`"}]}]}`)
 	var out, errOut bytes.Buffer
 	if code := Run([]string{"check", dir}, &out, &errOut); code != ExitDone {
 		t.Fatalf("a clean library: exit %d\n%s%s", code, out.String(), errOut.String())

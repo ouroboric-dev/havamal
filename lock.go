@@ -10,6 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -165,4 +168,62 @@ func SetHash(entries []Entry) string {
 	}
 	sort.Strings(lines)
 	return Sum([]byte(strings.Join(lines, "\n") + "\n"))
+}
+
+// Relock records one of our own skills in skills.lock: its files as they are on disk. A new skill
+// needs a licence; an existing one keeps its own. Vendored skills change only through Vendor.
+func Relock(dir, name, licence string) error {
+	if !namePattern.MatchString(name) {
+		return fmt.Errorf("%q is not a skill name", name)
+	}
+	lockPath := filepath.Join(dir, LockFile)
+	raw, err := os.ReadFile(lockPath)
+	if err != nil {
+		return err
+	}
+	l, err := ParseLock(raw)
+	if err != nil {
+		return err
+	}
+	old, have := l.Entry(name)
+	if have && !old.Own {
+		return fmt.Errorf("skill %s is vendored; change it with vendor, from its upstream", name)
+	}
+	if have && licence == "" {
+		licence = old.Licence
+	}
+	e := Entry{Name: name, Own: true, Licence: licence}
+	root := filepath.Join(dir, SkillsDir, name)
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", p)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		e.Files = append(e.Files, File{Path: filepath.ToSlash(rel), SHA256: Sum(b)})
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	b, err := os.ReadFile(filepath.Join(root, "SKILL.md"))
+	if err != nil {
+		return err
+	}
+	if _, err := ParseSkill(name, b); err != nil {
+		return err
+	}
+	l.Skills = slices.DeleteFunc(l.Skills, func(x Entry) bool { return x.Name == name })
+	l.Skills = append(l.Skills, e)
+	out, err := l.Marshal()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(lockPath, out, 0o644)
 }
