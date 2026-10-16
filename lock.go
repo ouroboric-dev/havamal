@@ -128,6 +128,9 @@ func (l *Lock) Marshal() ([]byte, error) {
 		sort.Slice(fs, func(a, b int) bool { return fs[a].Path < fs[b].Path })
 	}
 	l.Schema = LockSchema
+	if l.Skills == nil {
+		l.Skills = []Entry{}
+	}
 	if err := l.check(); err != nil {
 		return nil, err
 	}

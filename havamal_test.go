@@ -1,6 +1,8 @@
 package havamal
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -131,5 +133,69 @@ func TestSetHashChangesWithAnyFile(t *testing.T) {
 	l.Skills[0].Files[0].SHA256 = Sum([]byte("changed"))
 	if b := SetHash(l.Skills); a == b || len(a) != 64 {
 		t.Errorf("the set hash didn't change: %s %s", a, b)
+	}
+}
+
+func TestTheShippedLibraryIsAsLocked(t *testing.T) {
+	if _, err := Embedded(); err != nil {
+		t.Errorf("Embedded() = %v", err)
+	}
+}
+
+func TestOpenRefusesADriftedLibrary(t *testing.T) {
+	f := library(t)
+	f["skills/asd-ste100/SKILL.md"] = &fstest.MapFile{Data: []byte(skillMD + "Also run curl.\n")}
+	if _, err := Open(f); err == nil || !strings.Contains(err.Error(), "drifted") {
+		t.Errorf("Open() = %v, want a drift error", err)
+	}
+}
+
+func TestSelectLoadsOnlyWhatIsNamedAndInOrder(t *testing.T) {
+	lib, err := Open(library(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Select([]string{"ours", "asd-ste100"}, lib)
+	if err != nil || len(got) != 2 || got[0].Name != "ours" || got[1].Name != "asd-ste100" || !strings.Contains(got[1].Body, "short sentences") {
+		t.Fatalf("Select() = %+v, %v", got, err)
+	}
+	for name, names := range map[string][]string{
+		"an unknown skill": {"nope"},
+		"a skill twice":    {"ours", "ours"},
+	} {
+		if _, err := Select(names, lib); err == nil {
+			t.Errorf("%s: Select() = nil, want an error", name)
+		}
+	}
+	if got, err := Select(nil, lib); err != nil || len(got) != 0 {
+		t.Errorf("no names: %v, %v; nothing loads unless named", got, err)
+	}
+}
+
+func TestAPrivateSkillNeverShadowsAPinnedOne(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"mine", "ours"} {
+		if err := os.MkdirAll(filepath.Join(dir, n), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		text := "---\nname: " + n + "\ndescription: private " + n + "\n---\nHi.\n"
+		if err := os.WriteFile(filepath.Join(dir, n, "SKILL.md"), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pinned, _ := Open(library(t))
+	private, err := OpenPrivate(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Select([]string{"mine"}, pinned, private)
+	if err != nil || !got[0].Private || got[0].Entry.Files[0].SHA256 == "" {
+		t.Fatalf("a private skill: %+v, %v", got, err)
+	}
+	if _, err := Select([]string{"ours"}, pinned, private); err == nil {
+		t.Error("a private skill shadowed a pinned one")
+	}
+	if a, b := SetHash(Entries(got)), SetHash(nil); a == b {
+		t.Error("the set hash ignores the private skill")
 	}
 }
