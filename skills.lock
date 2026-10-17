@@ -1,4 +1,24 @@
 {
   "schema": "ygg.skills-lock/v1",
-  "skills": []
+  "skills": [
+    {
+      "name": "ponytail-review",
+      "upstream": {
+        "repo": "https://github.com/DietrichGebert/ponytail",
+        "path": "skills/ponytail-review",
+        "commit": "16352ac229eb08a9598dcae48fe9f2b342567d86"
+      },
+      "licence": "MIT",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "33fe4ebe22a460924e5d4a261e223df22e409cc94ab76182bee9fb91a3ef022e"
+        }
+      ]
+    }
+  ]
 }
