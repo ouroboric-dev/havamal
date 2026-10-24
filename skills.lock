@@ -19,6 +19,29 @@
           "sha256": "33fe4ebe22a460924e5d4a261e223df22e409cc94ab76182bee9fb91a3ef022e"
         }
       ]
+    },
+    {
+      "name": "retro",
+      "upstream": {
+        "repo": "https://github.com/mattpocock/skills",
+        "path": "skills/engineering/retro",
+        "commit": "5beb35b040e3de97e54fa9e386d7e42d15c295c2"
+      },
+      "licence": "MIT",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "33fbc28568e3146f20fd908b12998bc0ab30aa4f4c87288199a40793efa94696"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "cb6fb9d7e6b4be5975f41f6def1dd00a1255bad5d9b02696b124c924a8b8745c"
+        }
+      ]
     }
   ]
 }
