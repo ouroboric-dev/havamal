@@ -1,2 +1,2 @@
-# skills/ponytail-review is vendored from upstream and pinned by sha256 in skills.lock, so its bytes must not change.
-ignores: ["skills/ponytail-review/**"]
+# Vendored skills are pinned by sha256 in skills.lock, so their upstream bytes must not change.
+ignores: ["skills/ponytail-review/**", "skills/retro/**"]
